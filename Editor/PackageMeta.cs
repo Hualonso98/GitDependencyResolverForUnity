@@ -56,6 +56,8 @@ namespace Coffee.GitDependencyResolver
                 @"(git@|git://|http://|https://|ssh://)",
                 k_RegOption);
 
+        private const string k_RelativeFilePrefix = "file:";
+
         private static readonly GitLock s_GitLock = new GitLock();
 
         public string name { get; private set; }
@@ -77,8 +79,8 @@ namespace Coffee.GitDependencyResolver
             hash = "";
             url = "";
             version = new SemVersion(0);
-            dependencies = new PackageMeta [0];
-            gitDependencies = new PackageMeta [0];
+            dependencies = new PackageMeta[0];
+            gitDependencies = new PackageMeta[0];
         }
 
         public static PackageMeta FromPackageJson(string filePath)
@@ -86,13 +88,11 @@ namespace Coffee.GitDependencyResolver
             try
             {
                 if (!File.Exists(filePath))
-                {
                     return null;
-                }
 
                 string dir = Path.GetDirectoryName(filePath);
                 Dictionary<string, object> dict = Json.Deserialize(File.ReadAllText(filePath)) as Dictionary<string, object>;
-                PackageMeta package = new PackageMeta() {repository = dir,};
+                PackageMeta package = new PackageMeta() { repository = dir, };
 
 
                 object obj;
@@ -110,7 +110,7 @@ namespace Coffee.GitDependencyResolver
                 if (dict.TryGetValue("dependencies", out obj))
                 {
                     package.dependencies = (obj as Dictionary<string, object>)
-                        .Select(x => FromNameAndUrl(x.Key, (string) x.Value))
+                        .Select(x => FromNameAndUrl(x.Key, (string)x.Value))
                         .ToArray();
                 }
                 else
@@ -121,7 +121,7 @@ namespace Coffee.GitDependencyResolver
                 if (dict.TryGetValue("gitDependencies", out obj))
                 {
                     package.gitDependencies = (obj as Dictionary<string, object>)
-                        .Select(x => FromNameAndUrl(x.Key, (string) x.Value))
+                        .Select(x => FromNameAndUrl(x.Key, (string)x.Value))
                         .ToArray();
                 }
                 else
@@ -148,13 +148,20 @@ namespace Coffee.GitDependencyResolver
 
         public static PackageMeta FromNameAndUrl(string name, string url)
         {
-            PackageMeta package = new PackageMeta() {name = name};
+            PackageMeta package = new PackageMeta() { name = name };
 
             // Non git package.
             var isGit = s_IsGitReg.IsMatch(url);
             if (!isGit)
             {
-                package.SetVersion(url);
+                if (url.StartsWith(k_RelativeFilePrefix))
+                {
+                    package.SetPath(url);
+                }
+                else
+                {
+                    package.SetVersion(url);
+                }
                 return package;
             }
 
@@ -188,6 +195,11 @@ namespace Coffee.GitDependencyResolver
                 version = v;
         }
 
+        private void SetPath(string relativePath)
+        {
+            path = relativePath;
+        }
+
         private void ProcessUrlQuery(string urlQuery)
         {
             // Process url query.
@@ -213,6 +225,26 @@ namespace Coffee.GitDependencyResolver
         public IEnumerable<PackageMeta> GetAllDependencies()
         {
             return gitDependencies.Concat(dependencies);
+        }
+
+        public IEnumerable<PackageMeta> GetRelativePackages()
+        {
+            // return dependencies.Where(dependency => dependency.path.StartsWith(k_RelativeFilePrefix))
+            //     .Select(dependency => Path.GetFullPath(dependency.path[k_RelativeFilePrefix.Length..]))
+            //     .Select(FromPackageDir);
+
+            return dependencies
+    .Where(dependency => !string.IsNullOrEmpty(dependency.path) && dependency.path.StartsWith(k_RelativeFilePrefix))
+    .Select(dependency =>
+    {
+        // Quitamos el "file:" de la ruta
+        string rawPath = dependency.path.Substring(k_RelativeFilePrefix.Length);
+        // Normalizamos las barras para que funcione en cualquier sistema operativo
+        rawPath = rawPath.Replace('\\', '/');
+        // Devolvemos la ruta absoluta real combinada con la carpeta del proyecto
+        return Path.GetFullPath(Path.Combine(Directory.GetCurrentDirectory(), rawPath));
+    })
+    .Select(FromPackageDir);
         }
 
         public string GetDirectoryName()

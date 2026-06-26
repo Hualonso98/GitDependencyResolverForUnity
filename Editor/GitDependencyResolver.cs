@@ -37,11 +37,21 @@ namespace Coffee.GitDependencyResolver
 
         private static PackageMeta[] GetInstalledPackages()
         {
+            var manifestJsonPackageMeta = PackageMeta.FromPackageJson("./Packages/manifest.json");
+
+            // código temporal de diagnóstico:
+            var relatives = manifestJsonPackageMeta.GetRelativePackages();
+            foreach (var p in relatives)
+            {
+                UnityEngine.Debug.Log($"<b>[GDR Test]</b> Encontrado paquete relativo: {p.name} en ruta: {p.repository}");
+            }
+
             return Directory.GetDirectories("./Library/PackageCache")
                 .Concat(Directory.GetDirectories("./Packages"))
-                .Select(PackageMeta.FromPackageDir) // Convert to PackageMeta
-                .Concat(new[] {PackageMeta.FromPackageJson("./Packages/manifest.json")})
-                .Where(x => x != null) // Skip null
+                .Select(PackageMeta.FromPackageDir)
+                .Concat(new[] { manifestJsonPackageMeta })
+                .Concat(relatives)
+                .Where(x => x != null)
                 .ToArray();
         }
 
@@ -132,7 +142,11 @@ namespace Coffee.GitDependencyResolver
                         .Concat(requestedPackages)
                         .Any(x => dependency.name == x.name && (dependency.version != null && dependency.version <= x.version || x.version == null));
 
-                    if (isInstalled) continue;
+                    if (isInstalled)
+                    {
+                        UnityEngine.Debug.Log($"<b>[GDR]</b> La dependencia '{dependency.name}@{dependency.version}' ya está instalada.");
+                        continue;
+                    }
 
                     // Install the depended package later.
                     requestedPackages.RemoveAll(x => dependency.name == x.name);
@@ -162,7 +176,7 @@ namespace Coffee.GitDependencyResolver
                     DirUtils.Create(Path.Combine("Temp", "GitDependencies"));
                     var clonePath = Path.Combine(Path.Combine("Temp", "GitDependencies"), Path.GetFileName(Path.GetTempFileName()));
 
-                    EditorUtility.DisplayProgressBar("Clone Package", string.Format("Cloning {0}@{1}", package.name, package.version), i / (float) requestedPackages.Count);
+                    EditorUtility.DisplayProgressBar("Clone Package", string.Format("Cloning {0}@{1}", package.name, package.version), i / (float)requestedPackages.Count);
                     Log("Cloning '{0}@{1}' ({2}, {3})", package.name, package.version, package.revision, package.path);
                     var success = GitUtils.ClonePackage(package, clonePath);
 
